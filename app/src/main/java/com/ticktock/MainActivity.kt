@@ -1,13 +1,12 @@
 package com.ticktock
 
-import android.app.AlarmManager
-import android.content.Intent
+import android.Manifest
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -15,15 +14,23 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ticktock.permissions.PermissionHelper
 import com.ticktock.ui.MainScreen
 import com.ticktock.ui.MainViewModel
 import com.ticktock.ui.MainViewModelFactory
 
 class MainActivity : ComponentActivity() {
+    private var viewModel: MainViewModel? = null
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        viewModel?.refreshPermissionState()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        requestExactAlarmPermissionIfNeeded()
 
         val app = application as TickTockApp
 
@@ -38,20 +45,26 @@ class MainActivity : ComponentActivity() {
                 ),
             ) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    val viewModel: MainViewModel = viewModel(
-                        factory = MainViewModelFactory(app.repository),
+                    val vm: MainViewModel = viewModel(
+                        factory = MainViewModelFactory(app.repository, applicationContext),
                     )
-                    MainScreen(viewModel = viewModel)
+                    viewModel = vm
+                    MainScreen(viewModel = vm)
                 }
             }
         }
     }
 
-    private fun requestExactAlarmPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            val alarmManager = getSystemService(AlarmManager::class.java)
-            if (!alarmManager.canScheduleExactAlarms()) {
-                startActivity(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM))
+    override fun onResume() {
+        super.onResume()
+        requestNotificationPermissionIfNeeded()
+        viewModel?.onAppResumed()
+    }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (!PermissionHelper.hasNotificationPermission(this)) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }

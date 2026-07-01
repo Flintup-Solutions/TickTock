@@ -3,21 +3,21 @@ package com.ticktock.tts
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioManager
-import android.os.Handler
-import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.resume
 
 object TimeAnnouncer {
     private val isSpeaking = AtomicBoolean(false)
 
-    fun announceCurrentTime(context: Context) {
+    suspend fun announceCurrentTime(context: Context) {
         if (!isSpeaking.compareAndSet(false, true)) return
 
         val appContext = context.applicationContext
@@ -32,64 +32,67 @@ object TimeAnnouncer {
             val formatter = DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())
             val text = "The time is ${now.format(formatter)}"
 
-            speakBlocking(appContext, text)
+            speak(appContext, text)
         } finally {
             audioManager.setStreamVolume(AudioManager.STREAM_ALARM, previousVolume, 0)
             isSpeaking.set(false)
         }
     }
 
-    private fun speakBlocking(context: Context, text: String) {
-        val latch = CountDownLatch(1)
-        val handler = Handler(Looper.getMainLooper())
-        var ttsRef: TextToSpeech? = null
+    private suspend fun speak(context: Context, text: String) {
+        withContext(Dispatchers.Main) {
+            suspendCancellableCoroutine { continuation ->
+                var tts: TextToSpeech? = null
+                tts = TextToSpeech(context) { status ->
+                    val engine = tts
+                    if (engine == null) {
+                        if (continuation.isActive) continuation.resume(Unit)
+                        return@TextToSpeech
+                    }
 
-        handler.post {
-            ttsRef = TextToSpeech(context) { status ->
-                val tts = ttsRef ?: run {
-                    latch.countDown()
-                    return@TextToSpeech
+                    if (status != TextToSpeech.SUCCESS) {
+                        engine.shutdown()
+                        if (continuation.isActive) continuation.resume(Unit)
+                        return@TextToSpeech
+                    }
+
+                    engine.setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build(),
+                    )
+                    engine.setSpeechRate(0.9f)
+
+                    engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) = Unit
+
+                        override fun onDone(utteranceId: String?) {
+                            engine.shutdown()
+                            if (continuation.isActive) continuation.resume(Unit)
+                        }
+
+                        @Deprecated("Deprecated in Java")
+                        override fun onError(utteranceId: String?) {
+                            engine.shutdown()
+                            if (continuation.isActive) continuation.resume(Unit)
+                        }
+
+                        override fun onError(utteranceId: String?, errorCode: Int) {
+                            engine.shutdown()
+                            if (continuation.isActive) continuation.resume(Unit)
+                        }
+                    })
+
+                    engine.speak(text, TextToSpeech.QUEUE_FLUSH, null, UTTERANCE_ID)
                 }
 
-                if (status != TextToSpeech.SUCCESS) {
-                    tts.shutdown()
-                    latch.countDown()
-                    return@TextToSpeech
+                continuation.invokeOnCancellation {
+                    tts?.stop()
+                    tts?.shutdown()
                 }
-
-                tts.setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build(),
-                )
-                tts.setSpeechRate(0.9f)
-
-                tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                    override fun onStart(utteranceId: String?) = Unit
-
-                    override fun onDone(utteranceId: String?) {
-                        tts.shutdown()
-                        latch.countDown()
-                    }
-
-                    @Deprecated("Deprecated in Java")
-                    override fun onError(utteranceId: String?) {
-                        tts.shutdown()
-                        latch.countDown()
-                    }
-
-                    override fun onError(utteranceId: String?, errorCode: Int) {
-                        tts.shutdown()
-                        latch.countDown()
-                    }
-                })
-
-                tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, UTTERANCE_ID)
             }
         }
-
-        latch.await(15, TimeUnit.SECONDS)
     }
 
     private const val UTTERANCE_ID = "ticktock_time_announcement"

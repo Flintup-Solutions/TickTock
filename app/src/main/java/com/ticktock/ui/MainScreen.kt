@@ -1,5 +1,9 @@
 package com.ticktock.ui
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +20,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -25,6 +31,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -32,8 +39,10 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.ticktock.R
 import com.ticktock.data.TimeAlertProfile
 import java.util.Locale
 
@@ -41,6 +50,12 @@ import java.util.Locale
 @Composable
 fun MainScreen(viewModel: MainViewModel) {
     val uiState by viewModel.uiState.collectAsState()
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        viewModel.refreshPermissionState()
+    }
 
     Scaffold(
         topBar = {
@@ -57,23 +72,36 @@ fun MainScreen(viewModel: MainViewModel) {
             }
         },
     ) { padding ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
         ) {
-            if (uiState.profiles.isEmpty()) {
-                EmptyState(modifier = Modifier.align(Alignment.Center))
-            } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    items(uiState.profiles, key = { it.id }) { profile ->
-                        ProfileCard(
-                            profile = profile,
-                            onDelete = { viewModel.deleteProfile(profile) },
-                        )
+            PermissionBanners(
+                viewModel = viewModel,
+                uiState = uiState,
+                onRequestNotificationPermission = {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                },
+            )
+
+            Box(modifier = Modifier.fillMaxSize()) {
+                if (uiState.profiles.isEmpty()) {
+                    EmptyState(modifier = Modifier.align(Alignment.Center))
+                } else {
+                    LazyColumn(
+                        contentPadding = PaddingValues(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        items(uiState.profiles, key = { it.id }) { profile ->
+                            ProfileCard(
+                                profile = profile,
+                                nextAnnouncement = viewModel.formatNextAnnouncement(profile),
+                                onDelete = { viewModel.deleteProfile(profile) },
+                            )
+                        }
                     }
                 }
             }
@@ -85,6 +113,90 @@ fun MainScreen(viewModel: MainViewModel) {
             onDismiss = viewModel::hideAddDialog,
             onConfirm = viewModel::addProfile,
         )
+    }
+
+    if (uiState.showAlarmPermissionDialog) {
+        AlertDialog(
+            onDismissRequest = viewModel::dismissAlarmPermissionDialog,
+            title = { Text(stringResource(R.string.permission_alarm_title)) },
+            text = { Text(stringResource(R.string.permission_alarm_message)) },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.openExactAlarmSettings()
+                        viewModel.dismissAlarmPermissionDialog()
+                    },
+                ) {
+                    Text(stringResource(R.string.permission_alarm_action))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissAlarmPermissionDialog) {
+                    Text("Not now")
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun PermissionBanners(
+    viewModel: MainViewModel,
+    uiState: MainUiState,
+    onRequestNotificationPermission: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (uiState.needsExactAlarmPermission) {
+            PermissionBanner(
+                message = stringResource(R.string.permission_alarm_banner),
+                actionLabel = stringResource(R.string.permission_alarm_action),
+                onAction = viewModel::openExactAlarmSettings,
+            )
+        }
+        if (uiState.needsNotificationPermission) {
+            PermissionBanner(
+                message = stringResource(R.string.permission_notification_banner),
+                actionLabel = stringResource(R.string.permission_notification_action),
+                onAction = onRequestNotificationPermission,
+            )
+        }
+        if (uiState.needsBatteryOptimizationDisabled) {
+            PermissionBanner(
+                message = stringResource(R.string.permission_battery_banner),
+                actionLabel = stringResource(R.string.permission_battery_action),
+                onAction = viewModel::openBatteryOptimizationSettings,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PermissionBanner(
+    message: String,
+    actionLabel: String,
+    onAction: () -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+        ),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(onClick = onAction) {
+                Text(actionLabel)
+            }
+        }
     }
 }
 
@@ -111,6 +223,7 @@ private fun EmptyState(modifier: Modifier = Modifier) {
 @Composable
 private fun ProfileCard(
     profile: TimeAlertProfile,
+    nextAnnouncement: String?,
     onDelete: () -> Unit,
 ) {
     Card(
@@ -137,6 +250,14 @@ private fun ProfileCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 )
+                if (nextAnnouncement != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(R.string.next_announcement, nextAnnouncement),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
             IconButton(onClick = onDelete) {
                 Icon(
