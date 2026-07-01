@@ -29,7 +29,6 @@ data class MainUiState(
     val showAlarmPermissionDialog: Boolean = false,
     val needsExactAlarmPermission: Boolean = false,
     val needsBatteryOptimizationDisabled: Boolean = false,
-    val needsNotificationPermission: Boolean = false,
 )
 
 class MainViewModel(
@@ -59,7 +58,6 @@ class MainViewModel(
             it.copy(
                 needsExactAlarmPermission = !PermissionHelper.canScheduleExactAlarms(appContext),
                 needsBatteryOptimizationDisabled = !PermissionHelper.isIgnoringBatteryOptimizations(appContext),
-                needsNotificationPermission = !PermissionHelper.hasNotificationPermission(appContext),
             )
         }
     }

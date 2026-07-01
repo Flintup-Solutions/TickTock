@@ -1,16 +1,11 @@
 <resources>
     <string name="app_name">TickTock</string>
-    <string name="notification_channel_name">Time announcements</string>
-    <string name="notification_channel_description">Shown briefly while TickTock speaks the current time</string>
-    <string name="notification_announcement_title">TickTock</string>
-    <string name="notification_announcement_text">Announcing the time…</string>
     <string name="permission_alarm_title">Allow exact alarms</string>
     <string name="permission_alarm_message">TickTock needs permission to schedule exact-time alerts. Tap Allow on the next screen, then return to the app.</string>
     <string name="permission_alarm_banner">Exact alarms are disabled. Alerts will not fire until you grant permission.</string>
     <string name="permission_alarm_action">Grant permission</string>
     <string name="permission_battery_banner">Battery optimization may block alerts on this device. Disable it for TickTock.</string>
     <string name="permission_battery_action">Disable optimization</string>
-    <string name="permission_notification_banner">Notification permission is needed for announcements when the screen is off.</string>
-    <string name="permission_notification_action">Allow notifications</string>
     <string name="next_announcement">Next: %1$s</string>
+    <string name="profile_schedule_hint">Speaks once per interval · no background activity</string>
 </resources>

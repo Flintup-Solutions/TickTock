@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenuItem
@@ -25,13 +26,12 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.ticktock.data.TimeAlertProfile
-import java.util.Locale
 
-private val FREQUENCY_OPTIONS = listOf(10, 20, 30, 60)
+private val FREQUENCY_OPTIONS = listOf(5, 10, 20, 30, 60)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,20 +55,31 @@ fun ProfileFormDialog(
     }
     var frequencyExpanded by remember { mutableStateOf(false) }
 
-    var startHour by remember(existingProfile) { mutableIntStateOf(initialStart.hour) }
-    var startMinute by remember(existingProfile) { mutableIntStateOf(initialStart.minute) }
+    var startHourText by remember(existingProfile) { mutableStateOf(initialStart.hour.toString()) }
+    var startMinuteText by remember(existingProfile) { mutableStateOf(initialStart.minute.toString()) }
     var startIsPm by remember(existingProfile) { mutableStateOf(initialStart.isPm) }
 
-    var endHour by remember(existingProfile) { mutableIntStateOf(initialEnd.hour) }
-    var endMinute by remember(existingProfile) { mutableIntStateOf(initialEnd.minute) }
+    var endHourText by remember(existingProfile) { mutableStateOf(initialEnd.hour.toString()) }
+    var endMinuteText by remember(existingProfile) { mutableStateOf(initialEnd.minute.toString()) }
     var endIsPm by remember(existingProfile) { mutableStateOf(initialEnd.isPm) }
 
-    val isValid = isEndAfterStart(
-        startHour = startHour,
-        startMinute = startMinute,
+    val parsedStartHour = startHourText.toIntOrNull()
+    val parsedStartMinute = startMinuteText.toIntOrNull()
+    val parsedEndHour = endHourText.toIntOrNull()
+    val parsedEndMinute = endMinuteText.toIntOrNull()
+
+    val startHourValid = parsedStartHour != null && parsedStartHour in 1..12
+    val startMinuteValid = parsedStartMinute != null && parsedStartMinute in 0..59
+    val endHourValid = parsedEndHour != null && parsedEndHour in 1..12
+    val endMinuteValid = parsedEndMinute != null && parsedEndMinute in 0..59
+    val timesValid = startHourValid && startMinuteValid && endHourValid && endMinuteValid
+
+    val isValid = timesValid && isEndAfterStart(
+        startHour = parsedStartHour!!,
+        startMinute = parsedStartMinute!!,
         startIsPm = startIsPm,
-        endHour = endHour,
-        endMinute = endMinute,
+        endHour = parsedEndHour!!,
+        endMinute = parsedEndMinute!!,
         endIsPm = endIsPm,
     )
 
@@ -115,31 +126,47 @@ fun ProfileFormDialog(
                     style = MaterialTheme.typography.labelLarge,
                 )
 
-                TimePickerRow(
+                TimeInputRow(
                     label = "Start",
-                    hour = startHour,
-                    minute = startMinute,
+                    hourText = startHourText,
+                    minuteText = startMinuteText,
                     isPm = startIsPm,
-                    onHourChange = { startHour = it },
-                    onMinuteChange = { startMinute = it },
+                    hourValid = startHourValid || startHourText.isEmpty(),
+                    minuteValid = startMinuteValid || startMinuteText.isEmpty(),
+                    onHourChange = { startHourText = it.filter(Char::isDigit).take(2) },
+                    onMinuteChange = { startMinuteText = it.filter(Char::isDigit).take(2) },
                     onPeriodChange = { startIsPm = it },
                 )
 
-                TimePickerRow(
+                TimeInputRow(
                     label = "End",
-                    hour = endHour,
-                    minute = endMinute,
+                    hourText = endHourText,
+                    minuteText = endMinuteText,
                     isPm = endIsPm,
-                    onHourChange = { endHour = it },
-                    onMinuteChange = { endMinute = it },
+                    hourValid = endHourValid || endHourText.isEmpty(),
+                    minuteValid = endMinuteValid || endMinuteText.isEmpty(),
+                    onHourChange = { endHourText = it.filter(Char::isDigit).take(2) },
+                    onMinuteChange = { endMinuteText = it.filter(Char::isDigit).take(2) },
                     onPeriodChange = { endIsPm = it },
                 )
 
-                if (!isValid) {
+                if (!timesValid) {
+                    Text(
+                        text = "Enter hour (1–12) and minute (0–59)",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                } else if (!isValid) {
                     Text(
                         text = "End time must be after start time",
                         color = MaterialTheme.colorScheme.error,
                         style = MaterialTheme.typography.bodySmall,
+                    )
+                } else {
+                    Text(
+                        text = "Speaks once at each interval. The app stays idle between alerts.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     )
                 }
             }
@@ -149,10 +176,10 @@ fun ProfileFormDialog(
                 onClick = {
                     onConfirm(
                         frequencyMinutes,
-                        to24Hour(startHour, startIsPm),
-                        startMinute,
-                        to24Hour(endHour, endIsPm),
-                        endMinute,
+                        to24Hour(parsedStartHour!!, startIsPm),
+                        parsedStartMinute!!,
+                        to24Hour(parsedEndHour!!, endIsPm),
+                        parsedEndMinute!!,
                     )
                 },
                 enabled = isValid,
@@ -169,13 +196,15 @@ fun ProfileFormDialog(
 }
 
 @Composable
-private fun TimePickerRow(
+private fun TimeInputRow(
     label: String,
-    hour: Int,
-    minute: Int,
+    hourText: String,
+    minuteText: String,
     isPm: Boolean,
-    onHourChange: (Int) -> Unit,
-    onMinuteChange: (Int) -> Unit,
+    hourValid: Boolean,
+    minuteValid: Boolean,
+    onHourChange: (String) -> Unit,
+    onMinuteChange: (String) -> Unit,
     onPeriodChange: (Boolean) -> Unit,
 ) {
     Column {
@@ -188,22 +217,28 @@ private fun TimePickerRow(
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
         ) {
-            NumberStepper(
-                label = "Hour",
-                value = hour,
-                range = 1..12,
-                displayFormat = "%d",
+            OutlinedTextField(
+                value = hourText,
                 onValueChange = onHourChange,
+                label = { Text("Hour") },
+                isError = !hourValid,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.weight(1f),
             )
-            NumberStepper(
-                label = "Min",
-                value = minute,
-                range = 0..59,
-                displayFormat = "%02d",
+            Text(
+                text = ":",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(top = 16.dp),
+            )
+            OutlinedTextField(
+                value = minuteText,
                 onValueChange = onMinuteChange,
+                label = { Text("Min") },
+                isError = !minuteValid,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -228,53 +263,6 @@ private fun PeriodSelector(
             onClick = { onPeriodChange(true) },
             label = { Text("PM") },
         )
-    }
-}
-
-@Composable
-private fun NumberStepper(
-    label: String,
-    value: Int,
-    range: IntRange,
-    displayFormat: String,
-    onValueChange: (Int) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TextButton(
-                onClick = {
-                    val newValue = value - 1
-                    if (newValue in range) onValueChange(newValue)
-                },
-                enabled = value > range.first,
-            ) {
-                Text("−")
-            }
-            Text(
-                text = String.format(Locale.getDefault(), displayFormat, value),
-                style = MaterialTheme.typography.titleMedium,
-            )
-            TextButton(
-                onClick = {
-                    val newValue = value + 1
-                    if (newValue in range) onValueChange(newValue)
-                },
-                enabled = value < range.last,
-            ) {
-                Text("+")
-            }
-        }
     }
 }
 

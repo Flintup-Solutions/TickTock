@@ -1,9 +1,5 @@
 package com.ticktock.ui
 
-import android.Manifest
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -51,12 +47,6 @@ import com.ticktock.data.TimeAlertProfile
 fun MainScreen(viewModel: MainViewModel) {
     val uiState by viewModel.uiState.collectAsState()
 
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) {
-        viewModel.refreshPermissionState()
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -80,11 +70,6 @@ fun MainScreen(viewModel: MainViewModel) {
             PermissionBanners(
                 viewModel = viewModel,
                 uiState = uiState,
-                onRequestNotificationPermission = {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    }
-                },
             )
 
             Box(modifier = Modifier.fillMaxSize()) {
@@ -155,7 +140,6 @@ fun MainScreen(viewModel: MainViewModel) {
 private fun PermissionBanners(
     viewModel: MainViewModel,
     uiState: MainUiState,
-    onRequestNotificationPermission: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -168,13 +152,6 @@ private fun PermissionBanners(
                 message = stringResource(R.string.permission_alarm_banner),
                 actionLabel = stringResource(R.string.permission_alarm_action),
                 onAction = viewModel::openExactAlarmSettings,
-            )
-        }
-        if (uiState.needsNotificationPermission) {
-            PermissionBanner(
-                message = stringResource(R.string.permission_notification_banner),
-                actionLabel = stringResource(R.string.permission_notification_action),
-                onAction = onRequestNotificationPermission,
             )
         }
         if (uiState.needsBatteryOptimizationDisabled) {
@@ -275,6 +252,12 @@ private fun ProfileCard(
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.profile_schedule_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                )
             }
             IconButton(onClick = onDelete) {
                 Icon(

@@ -42,10 +42,24 @@ object SlotCalculator {
             ?.atZone(zone)
     }
 
-    fun shouldAnnounceNow(profile: TimeAlertProfile, now: ZonedDateTime = ZonedDateTime.now()): Boolean {
-        val truncatedNow = now.truncatedTo(ChronoUnit.MINUTES)
-        return slotsForDay(truncatedNow.toLocalDate(), profile).any { slot ->
-            slot.atZone(now.zone) == truncatedNow
+    fun nextSlotAfter(
+        profile: TimeAlertProfile,
+        after: ZonedDateTime,
+    ): ZonedDateTime? {
+        val zone = after.zone
+        val truncatedAfter = after.truncatedTo(ChronoUnit.MINUTES)
+
+        val laterToday = slotsForDay(truncatedAfter.toLocalDate(), profile)
+            .map { it.atZone(zone) }
+            .filter { it.isAfter(truncatedAfter) }
+
+        if (laterToday.isNotEmpty()) {
+            return laterToday.first()
         }
+
+        val tomorrow = truncatedAfter.toLocalDate().plusDays(1)
+        return slotsForDay(tomorrow, profile)
+            .firstOrNull()
+            ?.atZone(zone)
     }
 }

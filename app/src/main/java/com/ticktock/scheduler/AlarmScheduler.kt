@@ -4,31 +4,38 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
+import com.ticktock.MainActivity
 import com.ticktock.data.TimeAlertProfile
+import java.time.ZonedDateTime
+import java.time.temporal.ChronoUnit
 
 class AlarmScheduler(private val context: Context) {
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
     fun scheduleProfile(profile: TimeAlertProfile) {
+        scheduleAt(profile, SlotCalculator.nextSlot(profile))
+    }
+
+    fun scheduleNextSlot(profile: TimeAlertProfile) {
+        val justAnnounced = ZonedDateTime.now().truncatedTo(ChronoUnit.MINUTES)
+        scheduleAt(profile, SlotCalculator.nextSlotAfter(profile, justAnnounced))
+    }
+
+    private fun scheduleAt(profile: TimeAlertProfile, nextSlot: ZonedDateTime?) {
         cancelProfile(profile.id)
-        val nextSlot = SlotCalculator.nextSlot(profile) ?: return
+        if (nextSlot == null) return
         val triggerAtMillis = nextSlot.toInstant().toEpochMilli()
         val pendingIntent = createPendingIntent(profile.id)
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !alarmManager.canScheduleExactAlarms()) {
-            alarmManager.setAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerAtMillis,
-                pendingIntent,
-            )
-        } else {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP,
-                triggerAtMillis,
-                pendingIntent,
-            )
-        }
+        val showIntent = PendingIntent.getActivity(
+            context,
+            profile.id.toInt(),
+            Intent(context, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        alarmManager.setAlarmClock(
+            AlarmManager.AlarmClockInfo(triggerAtMillis, showIntent),
+            pendingIntent,
+        )
     }
 
     fun cancelProfile(profileId: Long) {
