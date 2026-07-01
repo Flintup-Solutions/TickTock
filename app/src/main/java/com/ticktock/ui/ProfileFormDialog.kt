@@ -13,7 +13,9 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -23,31 +25,56 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.ticktock.data.TimeAlertProfile
 import java.util.Locale
 
 private val FREQUENCY_OPTIONS = listOf(10, 20, 30, 60)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddProfileDialog(
+fun ProfileFormDialog(
+    existingProfile: TimeAlertProfile?,
     onDismiss: () -> Unit,
     onConfirm: (frequencyMinutes: Int, startHour: Int, startMinute: Int, endHour: Int, endMinute: Int) -> Unit,
 ) {
-    var frequencyMinutes by remember { mutableIntStateOf(10) }
+    val isEditing = existingProfile != null
+    val initialStart = remember(existingProfile) {
+        existingProfile?.let { from24Hour(it.startHour, it.startMinute) }
+            ?: Time12h(hour = 6, minute = 0, isPm = false)
+    }
+    val initialEnd = remember(existingProfile) {
+        existingProfile?.let { from24Hour(it.endHour, it.endMinute) }
+            ?: Time12h(hour = 8, minute = 0, isPm = false)
+    }
+
+    var frequencyMinutes by remember(existingProfile) {
+        mutableIntStateOf(existingProfile?.frequencyMinutes ?: 10)
+    }
     var frequencyExpanded by remember { mutableStateOf(false) }
 
-    var startHour by remember { mutableIntStateOf(6) }
-    var startMinute by remember { mutableIntStateOf(0) }
-    var endHour by remember { mutableIntStateOf(8) }
-    var endMinute by remember { mutableIntStateOf(0) }
+    var startHour by remember(existingProfile) { mutableIntStateOf(initialStart.hour) }
+    var startMinute by remember(existingProfile) { mutableIntStateOf(initialStart.minute) }
+    var startIsPm by remember(existingProfile) { mutableStateOf(initialStart.isPm) }
 
-    val isValid = (endHour * 60 + endMinute) > (startHour * 60 + startMinute)
+    var endHour by remember(existingProfile) { mutableIntStateOf(initialEnd.hour) }
+    var endMinute by remember(existingProfile) { mutableIntStateOf(initialEnd.minute) }
+    var endIsPm by remember(existingProfile) { mutableStateOf(initialEnd.isPm) }
+
+    val isValid = isEndAfterStart(
+        startHour = startHour,
+        startMinute = startMinute,
+        startIsPm = startIsPm,
+        endHour = endHour,
+        endMinute = endMinute,
+        endIsPm = endIsPm,
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New Time Alert") },
+        title = { Text(if (isEditing) "Edit Time Alert" else "New Time Alert") },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -64,7 +91,7 @@ fun AddProfileDialog(
                         label = { Text("Frequency") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = frequencyExpanded) },
                         modifier = Modifier
-                            .menuAnchor()
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
                             .fillMaxWidth(),
                     )
                     ExposedDropdownMenu(
@@ -92,16 +119,20 @@ fun AddProfileDialog(
                     label = "Start",
                     hour = startHour,
                     minute = startMinute,
+                    isPm = startIsPm,
                     onHourChange = { startHour = it },
                     onMinuteChange = { startMinute = it },
+                    onPeriodChange = { startIsPm = it },
                 )
 
                 TimePickerRow(
                     label = "End",
                     hour = endHour,
                     minute = endMinute,
+                    isPm = endIsPm,
                     onHourChange = { endHour = it },
                     onMinuteChange = { endMinute = it },
+                    onPeriodChange = { endIsPm = it },
                 )
 
                 if (!isValid) {
@@ -116,7 +147,13 @@ fun AddProfileDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    onConfirm(frequencyMinutes, startHour, startMinute, endHour, endMinute)
+                    onConfirm(
+                        frequencyMinutes,
+                        to24Hour(startHour, startIsPm),
+                        startMinute,
+                        to24Hour(endHour, endIsPm),
+                        endMinute,
+                    )
                 },
                 enabled = isValid,
             ) {
@@ -136,8 +173,10 @@ private fun TimePickerRow(
     label: String,
     hour: Int,
     minute: Int,
+    isPm: Boolean,
     onHourChange: (Int) -> Unit,
     onMinuteChange: (Int) -> Unit,
+    onPeriodChange: (Boolean) -> Unit,
 ) {
     Column {
         Text(
@@ -148,12 +187,14 @@ private fun TimePickerRow(
         Spacer(modifier = Modifier.height(8.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             NumberStepper(
                 label = "Hour",
                 value = hour,
-                range = 0..23,
+                range = 1..12,
+                displayFormat = "%d",
                 onValueChange = onHourChange,
                 modifier = Modifier.weight(1f),
             )
@@ -161,11 +202,32 @@ private fun TimePickerRow(
                 label = "Min",
                 value = minute,
                 range = 0..59,
-                step = 10,
+                displayFormat = "%02d",
                 onValueChange = onMinuteChange,
                 modifier = Modifier.weight(1f),
             )
         }
+        Spacer(modifier = Modifier.height(8.dp))
+        PeriodSelector(isPm = isPm, onPeriodChange = onPeriodChange)
+    }
+}
+
+@Composable
+private fun PeriodSelector(
+    isPm: Boolean,
+    onPeriodChange: (Boolean) -> Unit,
+) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(
+            selected = !isPm,
+            onClick = { onPeriodChange(false) },
+            label = { Text("AM") },
+        )
+        FilterChip(
+            selected = isPm,
+            onClick = { onPeriodChange(true) },
+            label = { Text("PM") },
+        )
     }
 }
 
@@ -174,9 +236,9 @@ private fun NumberStepper(
     label: String,
     value: Int,
     range: IntRange,
+    displayFormat: String,
     onValueChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
-    step: Int = 1,
 ) {
     Column(modifier = modifier) {
         Text(
@@ -188,27 +250,27 @@ private fun NumberStepper(
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             TextButton(
                 onClick = {
-                    val newValue = value - step
+                    val newValue = value - 1
                     if (newValue in range) onValueChange(newValue)
                 },
-                enabled = value - step >= range.first,
+                enabled = value > range.first,
             ) {
                 Text("−")
             }
             Text(
-                text = String.format(Locale.getDefault(), "%02d", value),
+                text = String.format(Locale.getDefault(), displayFormat, value),
                 style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(top = 12.dp),
             )
             TextButton(
                 onClick = {
-                    val newValue = value + step
+                    val newValue = value + 1
                     if (newValue in range) onValueChange(newValue)
                 },
-                enabled = value + step <= range.last,
+                enabled = value < range.last,
             ) {
                 Text("+")
             }

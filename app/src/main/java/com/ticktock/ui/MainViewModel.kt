@@ -17,9 +17,15 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+sealed interface ProfileDialogState {
+    data object Hidden : ProfileDialogState
+    data object Adding : ProfileDialogState
+    data class Editing(val profile: TimeAlertProfile) : ProfileDialogState
+}
+
 data class MainUiState(
     val profiles: List<TimeAlertProfile> = emptyList(),
-    val showAddDialog: Boolean = false,
+    val profileDialog: ProfileDialogState = ProfileDialogState.Hidden,
     val showAlarmPermissionDialog: Boolean = false,
     val needsExactAlarmPermission: Boolean = false,
     val needsBatteryOptimizationDisabled: Boolean = false,
@@ -81,14 +87,18 @@ class MainViewModel(
     }
 
     fun showAddDialog() {
-        _uiState.update { it.copy(showAddDialog = true) }
+        _uiState.update { it.copy(profileDialog = ProfileDialogState.Adding) }
     }
 
-    fun hideAddDialog() {
-        _uiState.update { it.copy(showAddDialog = false) }
+    fun editProfile(profile: TimeAlertProfile) {
+        _uiState.update { it.copy(profileDialog = ProfileDialogState.Editing(profile)) }
     }
 
-    fun addProfile(
+    fun dismissProfileDialog() {
+        _uiState.update { it.copy(profileDialog = ProfileDialogState.Hidden) }
+    }
+
+    fun saveProfile(
         frequencyMinutes: Int,
         startHour: Int,
         startMinute: Int,
@@ -101,16 +111,33 @@ class MainViewModel(
                 return@launch
             }
 
-            repository.addProfile(
-                TimeAlertProfile(
-                    frequencyMinutes = frequencyMinutes,
-                    startHour = startHour,
-                    startMinute = startMinute,
-                    endHour = endHour,
-                    endMinute = endMinute,
-                ),
-            )
-            hideAddDialog()
+            when (val dialog = _uiState.value.profileDialog) {
+                is ProfileDialogState.Editing -> {
+                    repository.updateProfile(
+                        dialog.profile.copy(
+                            frequencyMinutes = frequencyMinutes,
+                            startHour = startHour,
+                            startMinute = startMinute,
+                            endHour = endHour,
+                            endMinute = endMinute,
+                        ),
+                    )
+                }
+                ProfileDialogState.Adding -> {
+                    repository.addProfile(
+                        TimeAlertProfile(
+                            frequencyMinutes = frequencyMinutes,
+                            startHour = startHour,
+                            startMinute = startMinute,
+                            endHour = endHour,
+                            endMinute = endMinute,
+                        ),
+                    )
+                }
+                ProfileDialogState.Hidden -> return@launch
+            }
+
+            dismissProfileDialog()
             loadProfiles()
         }
     }
@@ -126,12 +153,11 @@ class MainViewModel(
         val nextSlot = SlotCalculator.nextSlot(profile) ?: return null
         val formatter = DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())
         val time = nextSlot.format(formatter)
-        val dayLabel = if (nextSlot.toLocalDate() == ZonedDateTime.now().toLocalDate()) {
+        return if (nextSlot.toLocalDate() == ZonedDateTime.now().toLocalDate()) {
             time
         } else {
             "Tomorrow $time"
         }
-        return dayLabel
     }
 }
 

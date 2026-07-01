@@ -16,6 +16,12 @@ class ProfileRepository(
         return id
     }
 
+    suspend fun updateProfile(profile: TimeAlertProfile) {
+        dao.insert(profile)
+        alarmScheduler.cancelProfile(profile.id)
+        alarmScheduler.scheduleProfile(profile)
+    }
+
     suspend fun deleteProfile(profile: TimeAlertProfile) {
         alarmScheduler.cancelProfile(profile.id)
         dao.delete(profile)

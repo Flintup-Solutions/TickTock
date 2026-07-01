@@ -4,6 +4,7 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -44,7 +45,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ticktock.R
 import com.ticktock.data.TimeAlertProfile
-import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,6 +99,7 @@ fun MainScreen(viewModel: MainViewModel) {
                             ProfileCard(
                                 profile = profile,
                                 nextAnnouncement = viewModel.formatNextAnnouncement(profile),
+                                onClick = { viewModel.editProfile(profile) },
                                 onDelete = { viewModel.deleteProfile(profile) },
                             )
                         }
@@ -108,11 +109,22 @@ fun MainScreen(viewModel: MainViewModel) {
         }
     }
 
-    if (uiState.showAddDialog) {
-        AddProfileDialog(
-            onDismiss = viewModel::hideAddDialog,
-            onConfirm = viewModel::addProfile,
-        )
+    when (val dialog = uiState.profileDialog) {
+        ProfileDialogState.Adding -> {
+            ProfileFormDialog(
+                existingProfile = null,
+                onDismiss = viewModel::dismissProfileDialog,
+                onConfirm = viewModel::saveProfile,
+            )
+        }
+        is ProfileDialogState.Editing -> {
+            ProfileFormDialog(
+                existingProfile = dialog.profile,
+                onDismiss = viewModel::dismissProfileDialog,
+                onConfirm = viewModel::saveProfile,
+            )
+        }
+        ProfileDialogState.Hidden -> Unit
     }
 
     if (uiState.showAlarmPermissionDialog) {
@@ -224,6 +236,7 @@ private fun EmptyState(modifier: Modifier = Modifier) {
 private fun ProfileCard(
     profile: TimeAlertProfile,
     nextAnnouncement: String?,
+    onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
     Card(
@@ -238,7 +251,11 @@ private fun ProfileCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onClick),
+            ) {
                 Text(
                     text = formatTimeRange(profile),
                     style = MaterialTheme.typography.titleMedium,
@@ -271,17 +288,7 @@ private fun ProfileCard(
 }
 
 private fun formatTimeRange(profile: TimeAlertProfile): String {
-    return "${formatTime(profile.startHour, profile.startMinute)} – ${formatTime(profile.endHour, profile.endMinute)}"
-}
-
-private fun formatTime(hour: Int, minute: Int): String {
-    val period = if (hour < 12) "AM" else "PM"
-    val displayHour = when {
-        hour == 0 -> 12
-        hour > 12 -> hour - 12
-        else -> hour
-    }
-    return String.format(Locale.getDefault(), "%d:%02d %s", displayHour, minute, period)
+    return "${formatTime12h(profile.startHour, profile.startMinute)} – ${formatTime12h(profile.endHour, profile.endMinute)}"
 }
 
 private fun formatFrequency(minutes: Int): String {
